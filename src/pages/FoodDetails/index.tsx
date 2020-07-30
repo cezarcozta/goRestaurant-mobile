@@ -5,7 +5,7 @@ import React, {
   useMemo,
   useLayoutEffect,
 } from 'react';
-import { Image, Alert } from 'react-native';
+import { Image } from 'react-native';
 
 import Icon from 'react-native-vector-icons/Feather';
 import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
@@ -73,110 +73,100 @@ const FoodDetails: React.FC = () => {
 
   useEffect(() => {
     async function loadFood(): Promise<void> {
-      // Load a specific food with extras based on routeParams id
-      const response = await api.get<Food>(`/foods/${routeParams.id}`);
+      const { id } = routeParams;
 
-      setFood({
-        ...response.data,
-        formattedPrice: formatValue(response.data.price),
-      });
+      const response = await api.get<Food>(`/foods/${id}`);
 
-      const extraFood = response.data.extras.map((extra: Extra) => {
+      const selectedFood = response.data;
+
+      setFood(selectedFood);
+
+      const extraExists = selectedFood.extras.map((extra: Extra) => {
         return {
           ...extra,
           quantity: 0,
         };
       });
 
-      setExtras(extraFood);
+      setExtras(extraExists);
     }
 
     loadFood();
   }, [routeParams]);
 
   function handleIncrementExtra(id: number): void {
-    // Increment extra quantity
-    const upExtras = extras.map(extra => {
+    const newExtra = extras.map(extra => {
       if (id === extra.id) {
         return {
           ...extra,
           quantity: extra.quantity + 1,
         };
       }
-
       return extra;
     });
 
-    setExtras(upExtras);
+    setExtras(newExtra);
   }
 
   function handleDecrementExtra(id: number): void {
-    // Decrement extra quantity
-    const downExtras = extras.map(extra => {
+    const newExtra = extras.map(extra => {
       if (id === extra.id) {
         return {
           ...extra,
-          quantity: extra.quantity - 1,
+          quantity: extra.quantity <= 0 ? 0 : extra.quantity - 1,
         };
       }
-
       return extra;
     });
 
-    setExtras(downExtras);
+    setExtras(newExtra);
   }
 
   function handleIncrementFood(): void {
-    // Increment food quantity
-    if (foodQuantity <= 1) {
-      setFoodQuantity(incrementFood => incrementFood + 1);
-    }
+    setFoodQuantity(foodQuantity + 1);
   }
 
   function handleDecrementFood(): void {
-    // Decrement food quantity
-    if (foodQuantity >= 1) {
-      setFoodQuantity(decrementFood => decrementFood - 1);
+    if (foodQuantity > 1) {
+      setFoodQuantity(foodQuantity - 1);
     }
   }
 
-  const toggleFavorite = useCallback(() => {
-    // Toggle if food is favorite or not
-    setIsFavorite(!isFavorite);
-  }, [isFavorite]);
+  const toggleFavorite = useCallback(async () => {
+    if (isFavorite) {
+      setIsFavorite(false);
+      await api.delete(`/favorites/${food.id}`);
+      return;
+    }
+    setIsFavorite(true);
+    await api.post('/favorites', food);
+  }, [isFavorite, food]);
 
   const cartTotal = useMemo(() => {
-    // Calculate cartTotal
-    const totalFood = food.price * foodQuantity;
-
-    const extraFood = extras.reduce(
-      (acm, extra) => acm + extra.value * extra.quantity,
-      0,
-    );
-
-    const total = totalFood + extraFood;
-
-    return formatValue(total);
+    const extraTotal = extras.reduce((acum, extra) => {
+      return acum + extra.value * extra.quantity;
+    }, 0);
+    const foodTotal = food.price * foodQuantity;
+    return formatValue(extraTotal + foodTotal);
   }, [extras, food, foodQuantity]);
 
   async function handleFinishOrder(): Promise<void> {
-    // Finish the order and save on the API
-    const order = {
-      product_id: food.id,
-      name: food.name,
-      description: food.description,
-      price: food.price,
-      thumbnail_url: food.image_url,
-      extras: extras.filter(extra => extra.quantity > 0),
-      total: cartTotal,
+    const response = await api.get('/orders');
+
+    const orders = response.data;
+
+    const newOrder = {
+      ...food,
+      id: orders.length + 1,
+      extras: { ...extras },
+      quantity: foodQuantity,
     };
-
+    delete newOrder.id;
     try {
-      await api.post('/orders', order);
-
+      await api.post('/orders', newOrder);
       navigation.navigate('Orders');
     } catch (err) {
-      Alert.alert('Erro ao confirmar produto');
+      console.log(err);
     }
   }
 
